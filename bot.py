@@ -3,6 +3,16 @@ from telegram.ext import ApplicationBuilder, MessageHandler, filters, CallbackQu
 from gpt import *
 from settings import CHAT_GPT_TOKEN, TG_TOKEN
 from util import *
+import json
+import os.path
+
+
+# задаем путь к json-файлу со словарем ответов телеграм-бота
+dict_path = os.path.join(os.path.abspath(os.path.dirname(__file__)), './DB/db_answers.json')
+with open(dict_path, "r") as json_file:
+    dict_answers = json.load(json_file)    # считываем словарь из файла
+
+question = ''
 
 
 async def start(update, context):
@@ -89,6 +99,7 @@ async def message_button(update, context):
 async def message_dialog(update, context):
     text = update.message.text
     dialog.list.append(text)
+    dialog.mode = 'main'
 
 
 async def profile(update, context):
@@ -124,6 +135,7 @@ async def profile_dialog(update, context):
         my_message = await send_text(update, context, "ChatCPT генерирует ваш профиль. Подождите...")
         answer = await chatGPT.send_question(prompt, user_info)
         await my_message.edit_text(answer)
+        dialog.mode = 'main'
 
 
 async def opener(update, context):
@@ -158,6 +170,7 @@ async def opener_dialog(update, context):
         user_info = dialog_user_info_to_str(dialog.user)
         answer = await chatGPT.send_question(prompt, user_info)
         await send_text(update, context, answer)
+        dialog.mode = 'main'
 
 
 async def hello(update, context):
@@ -172,23 +185,31 @@ async def hello(update, context):
     elif dialog.mode == 'opener':
         await opener_dialog(update, context)
     else:
-        await send_text(update, context,'*Привет!*')
-        await send_text(update, context, '_Как дела?_')
-        await send_text(update, context, 'Вы написали: ' + update.message.text)
+        dialog.mode = 'main'
         await send_photo(update, context, 'avatar_main')
-        await send_text_buttons(update, context, 'Запустить процесс?', {
-            "start":"Запустить",
-            "Stop":"Остановить"
-        })
+        global question
+        question = update.message.text.lower().strip()
+        if question in dict_answers:  # ищем в словаре ключ, равный сообщению клиента
+            await send_text(update, context, dict_answers.get(question))
+        else:
+            await send_text_buttons(update, context, 'Я Вас не понял... Спросить ChatGPT?', {
+                "start": "ChatGPT",
+                "Stop": "Продолжить"
+            })
 
 
 # обработчик кнопок
 async def hello_button(update, context):
     query = update.callback_query.data
     if query == "start":
-        await send_text(update, context, 'Процесс запущен')
+        dialog.mode = 'gpt'
+        prompt = load_prompt('gpt')
+        global question
+        answer = await chatGPT.send_question(prompt, question)
+        await  send_text(update, context, answer)
+        dialog.mode = 'main'
     else:
-        await send_text(update, context, 'Процесс остановлен')
+        await send_text(update, context, 'Старайтесь выражаться яснее)')
 
 
 dialog = Dialog()
